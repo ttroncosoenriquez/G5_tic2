@@ -68,22 +68,15 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.update_game)
         self.timer.start(1000) # 1 segundo
 
-    def setup_serial(self):
-        try:
-            self.arduino = serial.Serial('COM6', 9600)  
-            self.last_update_time = time.time()
-        except serial.SerialException as e:
-            print(f"Error al abrir el puerto serial: {e}")
-            sys.exit(1)
+        self.timerArdu = QTimer(self)
+        self.timerArdu.timeout.connect(self.LecturaArduino)
+        self.timerArdu.start(1000) # 10 segundo
 
-    def update_game(self):
-        self.gol_widget.update_game()
-        
-        # Enviar la cantidad de células vivas a Arduino cada vez que se actualice el juego
-        alive_cells = '{:04d}'.format(np.sum(self.gol_widget.game.grid))
 
+    def LecturaArduino(self):
         try:
-            self.arduino.write(str(alive_cells).encode()) # Le manda la información de las celulas vivas a arduino.
+            self.alive_cells =  '{:04d}'.format(np.sum(self.gol_widget.game.grid))
+            self.arduino.write(str(self.alive_cells).encode()) # Le manda la información de las celulas vivas a arduino.
             if self.arduino.in_waiting > 0:
                 self.mensaje = self.arduino.readline().decode().strip()  #Recibe, lee y almacena un mensaje mandado desde arduino
                 print(self.mensaje,type(self.mensaje))
@@ -91,10 +84,27 @@ class MainWindow(QMainWindow):
                     self.reset_game()
                     self.mensaje = " "    
             self.last_update_time = time.time()  # Actualizar el tiempo de la última actualización
-
-            print(alive_cells)
         except serial.SerialException as e:
             print(f"Error al enviar datos a Arduino: {e}")
+
+
+    def setup_serial(self):
+        try:
+            self.arduino = serial.Serial('COM3', 9600)  
+            self.last_update_time = time.time()
+        except serial.SerialException as e:
+            print(f"Error al abrir el puerto serial: {e}")
+            sys.exit(1)
+
+
+    def update_game(self):
+        self.gol_widget.update_game()
+        
+        # Enviar la cantidad de células vivas a Arduino cada vez que se actualice el juego
+        self.alive_cells = '{:04d}'.format(np.sum(self.gol_widget.game.grid))
+
+        print(self.alive_cells)
+
 
     def reset_game(self):
         self.gol_widget.game.grid = np.random.choice([0, 1], self.gol_widget.size*self.gol_widget.size, p=[0.8, 0.2]).reshape(self.gol_widget.size,self.gol_widget.size)
