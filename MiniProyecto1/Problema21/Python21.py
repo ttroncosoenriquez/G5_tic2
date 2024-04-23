@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
 
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_game)
-        self.timer.start(1000) # 1 segundo
+        self.timer.start(100) # 1 segundo
 
         self.timerArdu = QTimer(self)
         self.timerArdu.timeout.connect(self.LecturaArduino)
@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
 
     def setup_serial(self):
         try:
-            self.arduino = serial.Serial('COM3', 9600)  
+            self.arduino = serial.Serial('COM6', 9600)  
             self.last_update_time = time.time()
         except serial.SerialException as e:
             print(f"Error al abrir el puerto serial: {e}")
