@@ -10,20 +10,76 @@ from scipy.signal import convolve2d
 import numpy as np
 import serial
 import time
+
+def NumerosABooleano(arr):
+    # Nos permite tomar algun vector y transformar sus elementos en 1 y en 0 dependiendo de si es mayor a 0 o no los transforma en 1 o een 0.
+    binary_arr = (arr != 0).astype(int)
+    return binary_arr
+
+def FuncionBomba(matriz, bomba, x, y):
+    """
+    Nos permite crear una matriz que se aplica y reemplaza los elementos de otra matriz(bomba) en cierta posición (x,y) , donde los indices dan la vuelta.
+
+    """
+    # dimensiones 
+    bomba_rows, bomba_cols = bomba.shape
+
+    rows, cols = matriz.shape
+    for i in range(bomba_rows):
+        for j in range(bomba_cols):
+            idx_i = (i + x) % bomba_rows  # Estos signos % son los que permiten aplicar 
+            idx_j = (j + y) % bomba_cols
+            matriz[(i + x) % rows, (j + y) % cols] = bomba[idx_i, idx_j]
+
+    return matriz
+
+def FuncionCura(matriz, bomba, x, y):
+    """
+    Nos permite crear una matriz que se aplica y reemplaza los elementos de otra matriz(bomba) en cierta posición (x,y) , donde los indices dan la vuelta.
+
+    """
+    # dimensiones 
+    bomba_rows, bomba_cols = bomba.shape
+
+    rows, cols = matriz.shape
+    for i in range(bomba_rows):
+        for j in range(bomba_cols):
+            idx_i = (i + x) % bomba_rows  # Estos signos % son los que permiten aplicar 
+            idx_j = (j + y) % bomba_cols
+            if( matriz[(i + x) % rows, (j + y) % cols] == 0):
+                matriz[(i + x) % rows, (j + y) % cols] = 70
+            elif( matriz[(i + x) % rows, (j + y) % cols] > 0):
+                matriz[(i + x) % rows, (j + y) % cols] = matriz[(i + x) % rows, (j + y) % cols] +50
+                if (matriz[(i + x) % rows, (j + y) % cols] > 100): 
+                    matriz[(i + x) % rows, (j + y) % cols] = 100
+
+    return matriz
+
 class GolGame:
+    
     def __init__(self, size):
         self.size = size
-        self.grid = np.random.choice([0, 1], size*size, p=[0.8, 0.2]).reshape(size, size)
+        self.grid = np.random.choice([0, 100], size*size, p=[0.8, 0.2]).reshape(size, size)
+        self.temp = 0
 
     def update(self):
         kernel = np.array([[1, 1, 1],
                            [1, 0, 1],
                            [1, 1, 1]])
-        convolved = convolve2d(self.grid, kernel, mode='same', boundary='fill')
+        convolved = convolve2d(NumerosABooleano(self.grid), kernel, mode='same', boundary='fill')
         birth = (convolved == 3) & (self.grid == 0)
-        survive = ((convolved == 2) | (convolved == 3)) & (self.grid == 1)
-        self.grid[:, :] = 0
-        self.grid[birth | survive] = 1
+        survive = ((convolved == 2) | (convolved == 3)) & (NumerosABooleano(self.grid) == 1)
+        stress = ((convolved < 2) | (convolved > 3)) & (NumerosABooleano(self.grid) == 1)
+        self.grid[stress] = self.grid[stress] - 30
+        self.grid[birth] = 100
+        self.grid[survive] =  self.grid[survive] 
+        self.grid[self.grid < 0] = 0
+        self.grid[self.grid > 100] = 100
+        """if (self.temp  > 10):
+            self.grid[survive] =  self.grid[survive] + 10
+        elif (self.temp  < 10):
+            self.grid[survive] = self.grid[survive] - 10
+        self.temp += 1"""
 
 class GolWidget(QWidget):
     def __init__(self, parent=None):
@@ -41,13 +97,14 @@ class GolWidget(QWidget):
 
         self.size = 100
         self.game = GolGame(self.size)
-        self.im = self.ax.imshow(self.game.grid, cmap='gray')
+        self.im = self.ax.imshow(self.game.grid, cmap='viridis', vmin=0, vmax=100)
         self.ax.axis('on')
 
     def update_game(self):
         self.game.update()
         self.im.set_array(self.game.grid)
         self.canvas.draw()
+
 
 
 class MainWindow(QMainWindow):
@@ -98,9 +155,10 @@ class MainWindow(QMainWindow):
 
     def update_game(self):
         self.gol_widget.update_game()
+
         
         # Enviar la cantidad de células vivas a Arduino cada vez que se actualice el juego
-        self.alive_cells = '{:04d}'.format(np.sum(self.gol_widget.game.grid))
+        self.alive_cells = '{:04d}'.format(np.sum(NumerosABooleano(self.gol_widget.game.grid)))
 
         print(self.alive_cells)
 
@@ -111,6 +169,27 @@ class MainWindow(QMainWindow):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_R:  # Si se presiona la tecla 'R'
             self.reset_game()
+        elif event.key() == Qt.Key.Key_B:
+            self.bomb_game()
+        elif event.key() == Qt.Key.Key_H:
+            self.heal_game()
+        event.accept()
+
+
+    def bomb_game(self):
+        xrand =  np.random.randint(1, 101)
+        yrand =  np.random.randint(1, 101)
+        bomba = np.zeros((21, 21))
+        self.gol_widget.game.grid = FuncionBomba(self.gol_widget.game.grid, bomba , xrand , yrand)
+
+
+    def heal_game(self):
+        xrand =  np.random.randint(1, 101)
+        yrand =  np.random.randint(1, 101)
+        bomba = 100*np.ones((21, 21))
+        self.gol_widget.game.grid = FuncionCura(self.gol_widget.game.grid, bomba , xrand , yrand)
+
+
 
 def main():
     app = QApplication(sys.argv)
