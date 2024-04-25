@@ -22,17 +22,58 @@ import numpy as np
 import serial
 import time
 
-def NumerosABooleano(num):
-    if num == 0:
-        return 0
-    else:
-        return 1
 
+def NumerosABooleano(arr):
+    # Nos permite tomar algun vector y transformar sus elementos en 1 y en 0 dependiendo de si es mayor a 0 o no los transforma en 1 o een 0.
+    binary_arr = (arr != 0).astype(int)
+    return binary_arr
 
-class GolGame:
+def FuncionBomba(matriz, bomba, x, y):
+    """
+    Nos permite crear una matriz que se aplica y reemplaza los elementos de otra matriz(bomba) en cierta posición (x,y) , donde los indices dan la vuelta.
+
+    """
+    # dimensiones 
+    bomba_rows, bomba_cols = bomba.shape
+
+    rows, cols = matriz.shape
+    for i in range(bomba_rows):
+        for j in range(bomba_cols):
+            idx_i = (i + x) % bomba_rows  # Estos signos % son los que permiten aplicar 
+            idx_j = (j + y) % bomba_cols
+            matriz[(i + x) % rows, (j + y) % cols] = bomba[idx_i, idx_j]
+
+    return matriz
+
+def FuncionCura(matriz, bomba, x, y):
+    """
+    Nos permite crear una matriz que se aplica y reemplaza los elementos de otra matriz(bomba) en cierta posición (x,y) , donde los indices dan la vuelta.
+
+    """
+    # dimensiones 
+    bomba_rows, bomba_cols = bomba.shape
+
+    rows, cols = matriz.shape
+    for i in range(bomba_rows):
+        for j in range(bomba_cols):
+            idx_i = (i + x) % bomba_rows  # Estos signos % son los que permiten aplicar 
+            idx_j = (j + y) % bomba_cols
+            if( matriz[(i + x) % rows, (j + y) % cols] == 0):
+                matriz[(i + x) % rows, (j + y) % cols] = 70
+            elif( matriz[(i + x) % rows, (j + y) % cols] > 0):
+                matriz[(i + x) % rows, (j + y) % cols] = matriz[(i + x) % rows, (j + y) % cols] +50
+                if (matriz[(i + x) % rows, (j + y) % cols] > 100): 
+                    matriz[(i + x) % rows, (j + y) % cols] = 100
+
+    return matriz
+
+class GolGame: #Es la función que define el juego de la vida:
+    
     def __init__(self, size):
         self.size = size
-        self.grid = np.random.choice([0, 1], size*size, p=[0.8, 0.2]).reshape(size, size)
+        self.grid = np.random.choice([0, 100], size*size, p=[0.8, 0.2]).reshape(size, size)
+        self.temp = 10
+        self.RecibeTemp = True
 
     def update(self):
         kernel = np.array([[1, 1, 1],
@@ -41,11 +82,19 @@ class GolGame:
         convolved = convolve2d(NumerosABooleano(self.grid), kernel, mode='same', boundary='fill')
         birth = (convolved == 3) & (self.grid == 0)
         survive = ((convolved == 2) | (convolved == 3)) & (NumerosABooleano(self.grid) == 1)
-        self.grid[:, :] = self[grid:,:] - 30
+        stress = ((convolved < 2) | (convolved > 3)) & (NumerosABooleano(self.grid) == 1)
+        self.grid[stress] = self.grid[stress] - 30
         self.grid[birth] = 100
-        self.grid[survive] =  self.grid[survive] + 40
+        self.grid[survive] =  self.grid[survive] 
+        self.grid[self.grid < 0] = 0
+        self.grid[self.grid > 100] = 100
+        if (self.temp  > 20):
+            self.grid[survive] =  self.grid[survive] + 10
+        elif (self.temp  < 20):
+            self.grid[survive] = self.grid[survive] - 50
 
-class GolWidget(QWidget):
+
+class GolWidget(QWidget):  #Esta función crea el grafico del Juego para despues crearlo:
     def __init__(self, parent=None):
         super().__init__(parent)
         self.initUI()
@@ -61,8 +110,9 @@ class GolWidget(QWidget):
 
         self.size = 100
         self.game = GolGame(self.size)
-        self.im = self.ax.imshow(self.game.grid, cmap='gray')
-        self.ax.axis('on')
+        self.im = self.ax.imshow(self.game.grid, cmap='viridis', vmin=0, vmax=100)
+        self.ax.axis('off')
+        self.figure.subplots_adjust(left=0.05, right=0.95, bottom=0.05, top=0.95)
 
     def update_game(self):
         self.game.update()
@@ -71,51 +121,160 @@ class GolWidget(QWidget):
 
 
 
-class Ui_MainWindow(object):
+
+
+class Ui_MainWindow(QMainWindow):
+
+    def setup_serial(self): # Crea la conexión con el arduino
+        try:
+            self.arduino = serial.Serial('COM6', 9600)  
+            self.last_update_time = time.time()
+        except serial.SerialException as e:
+            print(f"Error al abrir el puerto serial: {e}")
+            sys.exit(1)
+
+
+    def LecturaArduino(self): # Es la función que manda y recibe datos del arduino
+        try:
+            self.alive_cells =  '{:04d}'.format(np.sum(NumerosABooleano(self.gol_widget.game.grid)))
+            self.arduino.write(str(self.alive_cells).encode()) # Le manda la información de las celulas vivas a arduino.
+            if self.arduino.in_waiting > 0:
+                self.mensaje = self.arduino.readline().decode().strip()  #Recibe, lee y almacena un mensaje mandado desde arduino
+                print(self.mensaje,type(self.mensaje))
+                if self.mensaje == "r":
+                    self.reset_game()
+                    self.mensaje = " "    
+                elif self.mensaje == "b_m":
+                    self.bomb_game()
+                    self.mensaje = " "    
+                elif self.mensaje == "b_c":
+                    self.heal_game()
+                    self.mensaje = " "    
+                elif self.mensaje[0] == "t" and self.gol_widget.game.RecibeTemp == True :
+                    self.gol_widget.game.temp =  (int(self.mensaje[2:])) #'{:03d}'.format
+                    self.mensaje = " "    
+            self.last_update_time = time.time()  # Actualizar el tiempo de la última actualización
+        except serial.SerialException as e:
+            print(f"Error al enviar datos a Arduino: {e}")
+
+
+
+
+
     def setupUi(self, MainWindow):
-        MainWindow.setObjectName("MainWindow")
+        
+        self.setup_serial() #Carga la coneccion con el Arduino
+
+        MainWindow.setObjectName("Juego de la vida 2.0")
         MainWindow.resize(794, 590)
+        
+
         self.centralwidget = QtWidgets.QWidget(parent=MainWindow)
         self.centralwidget.setObjectName("centralwidget")
-        self.pushButton = QtWidgets.QPushButton(parent=self.centralwidget)
-        self.pushButton.setGeometry(QtCore.QRect(50, 460, 181, 61))
+        
+
+
+        #Codigo que Carga el grafico del juego:
+        self.gol_widget = GolWidget(self.centralwidget)
+        self.gol_widget.setGeometry(QtCore.QRect(0, 0, 500, 500))  # Example size and position
+
+
+        #Boton Bomba
+
+        self.pushButton_b = QtWidgets.QPushButton(parent=self.centralwidget)
+        self.pushButton_b.setGeometry(QtCore.QRect(50, 480, 181, 61))
         font = QtGui.QFont()
         font.setPointSize(9)
-        self.pushButton.setFont(font)
-        self.pushButton.setObjectName("pushButton")
-        self.pushButton_2 = QtWidgets.QPushButton(parent=self.centralwidget)
-        self.pushButton_2.setGeometry(QtCore.QRect(280, 460, 171, 61))
+        self.pushButton_b.setFont(font)
+        self.pushButton_b.setObjectName("pushButton")
+        self.pushButton_b.clicked.connect(self.bomb_game)
+
+
+        #Boton Curación
+
+        self.pushButton_h = QtWidgets.QPushButton(parent=self.centralwidget)
+        self.pushButton_h.setGeometry(QtCore.QRect(280, 480, 171, 61))
         font = QtGui.QFont()
         font.setPointSize(9)
-        self.pushButton_2.setFont(font)
-        self.pushButton_2.setObjectName("pushButton_2")
-        self.pushButton_3 = QtWidgets.QPushButton(parent=self.centralwidget)
-        self.pushButton_3.setGeometry(QtCore.QRect(530, 240, 211, 61))
+        self.pushButton_h.setFont(font)
+        self.pushButton_h.setObjectName("pushButton_2")
+        self.pushButton_h.clicked.connect(self.heal_game)
+
+        #Boton Cambio Manual-Arduino
+        self.pushButton_tc = QtWidgets.QPushButton(parent=self.centralwidget)
+        self.pushButton_tc.setGeometry(QtCore.QRect(530, 240, 211, 61))
         font = QtGui.QFont()
         font.setPointSize(10)
-        self.pushButton_3.setFont(font)
-        self.pushButton_3.setObjectName("pushButton_3")
+        self.pushButton_tc.setFont(font)
+        self.pushButton_tc.setObjectName("pushButton_3")
+        self.pushButton_tc.clicked.connect(self.LeeryEnviarT)
+
+
+        #Boton Cambio Manual-Arduino
+        self.pushButton_ta = QtWidgets.QPushButton(parent=self.centralwidget)
+        self.pushButton_ta.setGeometry(QtCore.QRect(530, 340, 211, 61))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.pushButton_ta.setFont(font)
+        self.pushButton_ta.setObjectName("pushButton_4")
+        self.pushButton_ta.clicked.connect(self.MandarTdeArduino)
+
+
+
+        #Casilla de igresar temperatura manualmente:
         self.textEdit = QtWidgets.QTextEdit(parent=self.centralwidget)
         self.textEdit.setGeometry(QtCore.QRect(510, 100, 241, 51))
         self.textEdit.setObjectName("textEdit")
+        dataT = self.textEdit.toPlainText()
+        print(dataT)
+
+        #Descripción de la casilla de temperatura:
         self.label = QtWidgets.QLabel(parent=self.centralwidget)
-        self.label.setGeometry(QtCore.QRect(490, 70, 281, 20))
+        self.label.setGeometry(QtCore.QRect(530, 70, 311, 20))
         font = QtGui.QFont()
         font.setPointSize(10)
         self.label.setFont(font)
         self.label.setObjectName("label")
+
+
+        #No se que hace esta parte:
         self.verticalLayoutWidget = QtWidgets.QWidget(parent=self.centralwidget)
         self.verticalLayoutWidget.setGeometry(QtCore.QRect(30, 40, 441, 401))
         self.verticalLayoutWidget.setObjectName("verticalLayoutWidget")
         self.verticalLayout = QtWidgets.QVBoxLayout(self.verticalLayoutWidget)
         self.verticalLayout.setContentsMargins(0, 0, 0, 0)
         self.verticalLayout.setObjectName("verticalLayout")
+
+
+        #Este es un numero que representa el numero de celulas vivas:
+        self.number_label = QtWidgets.QLabel(parent=self.centralwidget)
+        self.number_label.setGeometry(QtCore.QRect(550, 470, 100, 50))  # Set position and size
+        font = QtGui.QFont()
+        font.setPointSize(24)  # Set font size
+        self.number_label.setFont(font)
+        self.number_label.setText(str(np.sum(NumerosABooleano(self.gol_widget.game.grid)))) 
+
+        self.label_3 = QtWidgets.QLabel(parent=self.centralwidget)
+        self.label_3.setGeometry(QtCore.QRect(550, 460, 220, 12))
+        font = QtGui.QFont()
+        font.setPointSize(10)
+        self.label_3.setFont(font)
+        self.label_3.setObjectName("label_3")
+
+
+
+
+        
+
+        #LAbel de las casillas de cambio Arduino/Interfaz
         self.label_2 = QtWidgets.QLabel(parent=self.centralwidget)
-        self.label_2.setGeometry(QtCore.QRect(500, 210, 281, 16))
+        self.label_2.setGeometry(QtCore.QRect(530, 210, 281, 16))
         font = QtGui.QFont()
         font.setPointSize(10)
         self.label_2.setFont(font)
         self.label_2.setObjectName("label_2")
+
+
         MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(parent=MainWindow)
         self.menubar.setGeometry(QtCore.QRect(0, 0, 794, 26))
@@ -128,14 +287,84 @@ class Ui_MainWindow(object):
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
+
+
+        #Esta parte del codigo actualiza el juego de la vida:
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_game)
+        self.timer.start(100) # 0.1 segundo
+
+        self.timerArdu = QTimer(self)
+        self.timerArdu.timeout.connect(self.LecturaArduino)
+        self.timerArdu.start(5000) # 5 segundo
+
+
+
     def retranslateUi(self, MainWindow):
+        #Le da los nombres correspondientes a los elementos de la interfaz:
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
-        self.pushButton.setText(_translate("MainWindow", "Bomba de curación"))
-        self.pushButton_2.setText(_translate("MainWindow", "Bomba de destrcción"))
-        self.pushButton_3.setText(_translate("MainWindow", "Sensor KY-015"))
+        self.pushButton_h.setText(_translate("MainWindow", "Bomba de curación"))
+        self.pushButton_b.setText(_translate("MainWindow", "Bomba de destrcción"))
+        self.pushButton_tc.setText(_translate("MainWindow", "Dato Manual"))
+        self.pushButton_ta.setText(_translate("MainWindow", "Sensor KY-015"))
         self.label.setText(_translate("MainWindow", "Ingrese temperatura del tipo \"t_000\""))
-        self.label_2.setText(_translate("MainWindow", "Cambie la entrada de temperatura a"))
+        self.label_2.setText(_translate("MainWindow", "Cambie la entrada de temperatura a:"))
+        self.label_3.setText(_translate("MainWindow", "Numero de Celulas vivas:"))
+
+
+    def LeeryEnviarT(self):
+        dataT = self.textEdit.toPlainText()
+        self.gol_widget.game.temp = int(dataT[2:])
+        print("temperatura definida como:",dataT[2:])
+        self.gol_widget.game.RecibeTemp = False
+
+    def MandarTdeArduino(self):
+        self.gol_widget.game.RecibeTemp = True
+
+
+    def update_game(self): #Función que actualiza el juego dentro de la interfaz principal e imprime el numero de celulas:
+        self.gol_widget.update_game()   
+        self.alive_cells = '{:04d}'.format(np.sum(NumerosABooleano(self.gol_widget.game.grid))) # Este actualiza el numero de celulas vivas en la interfaz:
+        self.number_label.setText(self.alive_cells) 
+        if self.alive_cells == 0:
+            print("Se acabo el Juego, reiniciando:")
+            self.reset_game()
+        
+        # Enviar la cantidad de células vivas a Arduino cada vez que se actualice el juego
+        
+
+        #print(self.alive_cells)
+
+
+    def reset_game(self):  #Función que resetea el juego desde la interfaz principal
+        self.gol_widget.game.grid = np.random.choice([0, 1], self.gol_widget.size*self.gol_widget.size, p=[0.8, 0.2]).reshape(self.gol_widget.size,self.gol_widget.size)
+
+    def keyPressEvent(self, event): #Función que nos permite activar las funciones bomba, reseteo y curación desde el teclado
+        if event.key() == Qt.Key.Key_R:  #reinicia
+            self.reset_game()
+        elif event.key() == Qt.Key.Key_B: #bomba
+            self.bomb_game()
+        elif event.key() == Qt.Key.Key_H: #curación
+            self.heal_game()
+        event.accept()
+
+    def bomb_game(self): #Función que aplica la bomba de muerte:
+        xrand =  np.random.randint(1, 101)
+        yrand =  np.random.randint(1, 101)
+        bomba = np.zeros((21, 21))
+        self.gol_widget.game.grid = FuncionBomba(self.gol_widget.game.grid, bomba , xrand , yrand)
+
+
+    def heal_game(self): #Función que aplica la bomba de curación:
+        xrand =  np.random.randint(1, 101)
+        yrand =  np.random.randint(1, 101)
+        bomba = 100*np.ones((21, 21))
+        self.gol_widget.game.grid = FuncionCura(self.gol_widget.game.grid, bomba , xrand , yrand)
+
+
+
+
 
 
 if __name__ == "__main__":
