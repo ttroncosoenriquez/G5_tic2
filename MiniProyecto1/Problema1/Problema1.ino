@@ -121,15 +121,15 @@ void loop() {
 
         int bApretado = 0;
 
-        if ((val1==LOW && oldVal1==HIGH) || (val1==HIGH && oldVal1==LOW ) ) { 
+        if ((val1==LOW && oldVal1==HIGH) || (val1==HIGH && oldVal1==LOW )   ) { 
           vB1 = !vB1  ; // Si el boton es presionado, cambia el valor 
           bApretado = 1;
         }
-        if ((val2==LOW && oldVal2==HIGH) || (val2==HIGH && oldVal2==LOW ) ) { 
+        if ((val2==LOW && oldVal2==HIGH) || (val2==HIGH && oldVal2==LOW )   ) { 
           vB2 = !vB2  ; // Si el boton es presionado, cambia el valor 
           bApretado = 2;
         }
-        if ((val3==LOW && oldVal3==HIGH) || (val3==HIGH && oldVal3==LOW ) ) { 
+        if ((val3==LOW && oldVal3==HIGH) || (val3==HIGH && oldVal3==LOW )  ) { 
           vB3 = !vB3  ; // Si el boton es presionado, cambia el valor 
           bApretado = 3;
         }
