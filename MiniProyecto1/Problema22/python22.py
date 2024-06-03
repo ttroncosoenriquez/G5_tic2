@@ -303,7 +303,7 @@ class Ui_MainWindow(QMainWindow):
     def retranslateUi(self, MainWindow):
         #Le da los nombres correspondientes a los elementos de la interfaz:
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "MainWindow"))
+        MainWindow.setWindowTitle(_translate("MainWindow", "Juego de la vida 2.0"))
         self.pushButton_h.setText(_translate("MainWindow", "Bomba de curación"))
         self.pushButton_b.setText(_translate("MainWindow", "Bomba de destrcción"))
         self.pushButton_tc.setText(_translate("MainWindow", "Dato Manual"))
